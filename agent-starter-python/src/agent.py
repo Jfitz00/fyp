@@ -1,5 +1,12 @@
 import logging
-
+import os
+from typing import Optional
+from urllib.parse import quote
+import aiohttp
+import asyncio
+import handlebars
+import json
+import uuid
 from dotenv import load_dotenv
 from livekit import rtc
 from livekit.agents import (
@@ -8,115 +15,152 @@ from livekit.agents import (
     AgentSession,
     JobContext,
     JobProcess,
+    RunContext,
+    ToolError,
     cli,
+    function_tool,
     inference,
     room_io,
+    utils,
 )
-from livekit.plugins import noise_cancellation, silero
+from livekit.plugins import (
+    noise_cancellation,
+    silero,
+)
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-logger = logging.getLogger("agent")
+logger = logging.getLogger("agent-Emery-2af")
 
 load_dotenv(".env.local")
 
 
-class Assistant(Agent):
-    def __init__(self) -> None:
+class VariableTemplater:
+    def __init__(self, metadata: str, additional: dict[str, dict[str, str]] | None = None) -> None:
+        self.variables = {
+            "metadata": self._parse_metadata(metadata),
+        }
+        if additional:
+            self.variables.update(additional)
+        self._cache = {}
+        self._compiler = handlebars.Compiler()
+
+    def _parse_metadata(self, metadata: str) -> dict:
+        try:
+            value = json.loads(metadata)
+            if isinstance(value, dict):
+                return value
+            else:
+                logger.warning(f"Job metadata is not a JSON dict: {metadata}")
+                return {}
+        except json.JSONDecodeError:
+            return {}
+
+    def _compile(self, template: str):
+        if template in self._cache:
+            return self._cache[template]
+        self._cache[template] = self._compiler.compile(template)
+        return self._cache[template]
+
+    def render(self, template: str):
+        return self._compile(template)(self.variables)
+
+
+class DefaultAgent(Agent):
+    def __init__(self, metadata: str, fallback_conversation_id: Optional[str] = None) -> None:
+        self._conversation_id = fallback_conversation_id or str(uuid.uuid4())
+        self._templater = VariableTemplater(metadata)
+        self._headers_templater = VariableTemplater(metadata, {"secrets": dict(os.environ)})
         super().__init__(
-            instructions="""You are a helpful voice AI assistant. The user is interacting with you via voice, even if you perceive the conversation as text.
-            You eagerly assist users with their questions by providing information from your extensive knowledge.
-            Your responses are concise, to the point, and without any complex formatting or punctuation including emojis, asterisks, or other symbols.
-            You are curious, friendly, and have a sense of humor.""",
+            instructions=self._templater.render("""You are tasked with answering customer product queries using the information retrieved from the attached hybrid search webhook tool. 
+
+When answering a question, if the customer question requires contextual product data, use the hybrid webhook search tool to retrieve relevant product rows. 
+
+The hybrid search tool combines both full-text search and semantic search to retrieve the 5 most relevant product rows. Only use the most relevant rows when formulating your response.
+
+All column names are self-explanatory apart from the 'sales' column which you can interpret as the product's price in EURO. The 'description' column values are also quite messy, so you are free to ignore strange symbols, extend abbreviations, etc.
+
+Your goal is to provide an accurate answer specific to what the customer asked based on the retrieved information ONLY.
+
+If you cannot answer the question using the provided information or if no information is returned from the retrieval tools, say “Sorry I don’t know. Feel free to visit the office and ask one of our staff members”."""),
         )
 
-    # To add tools, use the @function_tool decorator.
-    # Here's an example that adds a simple weather tool.
-    # You also have to add `from livekit.agents import function_tool, RunContext` to the top of this file
-    # @function_tool
-    # async def lookup_weather(self, context: RunContext, location: str):
-    #     """Use this tool to look up current weather information in the given location.
-    #
-    #     If the location is not supported by the weather service, the tool will indicate this. You must tell the user the location's weather is unavailable.
-    #
-    #     Args:
-    #         location: The location to look up weather information for (e.g. city name)
-    #     """
-    #
-    #     logger.info(f"Looking up weather for {location}")
-    #
-    #     return "sunny with a temperature of 70 degrees."
+    async def on_enter(self):
+        await self.session.generate_reply(
+            instructions=self._templater.render("""Hello! Welcome to Fitzgerald Flowers! How can I help you today?"""),
+            allow_interruptions=True,
+        )
+
+    @function_tool(name="fitzgerald_flowers_product_hybrid_search")
+    async def _http_tool_fitzgerald_flowers_product_hybrid_search(
+        self, context: RunContext, query: str
+    ) -> str | None:
+        """
+        Makes an HTTP request to return the most relevant products based on a combination of full-text and semantic search.
+
+        Args:
+            query: Parameter decided by you in order to return the most relevant product rows related to the customer's prompt.
+        """
+
+        context.disallow_interruptions()
+
+        url = "https://favfzwgqlyupldmppocr.supabase.co/functions/v1/cached-hybrid-search"
+        headers = {
+            "Authorization": self._headers_templater.render("Bearer {{secrets.SUPABASE_ANON_KEY}}"),
+            "Conversation-Id": self._conversation_id,
+        }
+        payload = {
+            "query": query,
+        }
+
+        try:
+            session = utils.http_context.http_session()
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with session.post(url, timeout=timeout, headers=headers, json=payload) as resp:
+                if resp.status >= 400:
+                    raise ToolError(f"error: HTTP {resp.status}")
+                return await resp.text()
+        except ToolError:
+            raise
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            raise ToolError(f"error: {e!s}") from e
 
 
 server = AgentServer()
 
-
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 
-
 server.setup_fnc = prewarm
 
-
 @server.rtc_session()
-async def my_agent(ctx: JobContext):
-    # Logging setup
-    # Add any other context you want in all log entries here
-    ctx.log_context_fields = {
-        "room": ctx.room.name,
-    }
+async def entrypoint(ctx: JobContext):
+    runtime_conversation_id = (
+        getattr(ctx.job, "id", None)
+        or getattr(ctx.room, "name", None)
+    )
 
-    # Set up a voice AI pipeline using OpenAI, Cartesia, Deepgram, and the LiveKit turn detector
     session = AgentSession(
-        # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
-        # See all available models at https://docs.livekit.io/agents/models/stt/
-        stt=inference.STT(model="deepgram/nova-3", language="multi"),
-        # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response
-        # See all available models at https://docs.livekit.io/agents/models/llm/
-        llm=inference.LLM(model="openai/gpt-4.1-mini"),
-        # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
-        # See all available models as well as voice selections at https://docs.livekit.io/agents/models/tts/
+        stt=inference.STT(model="cartesia/ink-whisper", language="en"),
+        llm=inference.LLM(model="openai/gpt-4o-mini"),
         tts=inference.TTS(
-            model="cartesia/sonic-3", voice="9626c31c-bec5-4cca-baa8-f8ba9e84c8bc"
+            model="cartesia/sonic-3",
+            voice="a167e0f3-df7e-4d52-a9c3-f949145efdab",
+            language="en"
         ),
-        # VAD and turn detection are used to determine when the user is speaking and when the agent should respond
-        # See more at https://docs.livekit.io/agents/build/turns
         turn_detection=MultilingualModel(),
         vad=ctx.proc.userdata["vad"],
-        # allow the LLM to generate a response while waiting for the end of turn
-        # See more at https://docs.livekit.io/agents/build/audio/#preemptive-generation
         preemptive_generation=True,
     )
 
-    # To use a realtime model instead of a voice pipeline, use the following session setup instead.
-    # (Note: This is for the OpenAI Realtime API. For other providers, see https://docs.livekit.io/agents/models/realtime/))
-    # 1. Install livekit-agents[openai]
-    # 2. Set OPENAI_API_KEY in .env.local
-    # 3. Add `from livekit.plugins import openai` to the top of this file
-    # 4. Use the following session setup instead of the version above
-    # session = AgentSession(
-    #     llm=openai.realtime.RealtimeModel(voice="marin")
-    # )
-
-    # # Add a virtual avatar to the session, if desired
-    # # For other providers, see https://docs.livekit.io/agents/models/avatar/
-    # avatar = hedra.AvatarSession(
-    #   avatar_id="...",  # See https://docs.livekit.io/agents/models/avatar/plugins/hedra
-    # )
-    # # Start the avatar and wait for it to join
-    # await avatar.start(session, room=ctx.room)
-
-    # Start the session, which initializes the voice pipeline and warms up the models
     await session.start(
-        agent=Assistant(),
+        agent=DefaultAgent(
+            metadata=ctx.job.metadata,
+            fallback_conversation_id=runtime_conversation_id,
+        ),
         room=ctx.room,
         room_options=room_io.RoomOptions(
             audio_input=room_io.AudioInputOptions(
-                noise_cancellation=lambda params: (
-                    noise_cancellation.BVCTelephony()
-                    if params.participant.kind
-                    == rtc.ParticipantKind.PARTICIPANT_KIND_SIP
-                    else noise_cancellation.BVC()
-                ),
+                noise_cancellation=lambda params: noise_cancellation.BVCTelephony() if params.participant.kind == rtc.ParticipantKind.PARTICIPANT_KIND_SIP else noise_cancellation.BVC(),
             ),
         ),
     )

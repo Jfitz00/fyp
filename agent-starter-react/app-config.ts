@@ -33,20 +33,20 @@ export interface AppConfig {
 }
 
 export const APP_CONFIG_DEFAULTS: AppConfig = {
-  companyName: 'LiveKit',
-  pageTitle: 'LiveKit Voice Agent',
-  pageDescription: 'A voice agent built with LiveKit',
+  companyName: 'Fitzgerald Flowers',
+  pageTitle: 'Fitzgerald Flowers Product Agent',
+  pageDescription: 'Your advanced AI product assistant',
 
   supportsChatInput: true,
-  supportsVideoInput: true,
-  supportsScreenShare: true,
+  supportsVideoInput: false,
+  supportsScreenShare: false,
   isPreConnectBufferEnabled: true,
 
-  logo: '/lk-logo.svg',
+  logo: '/image001.png',
   accent: '#002cf2',
-  logoDark: '/lk-logo-dark.svg',
-  accentDark: '#1fd5f9',
-  startButtonText: 'Start call',
+  logoDark: '/image001.png',
+  accentDark: '#002cf2',
+  startButtonText: 'Ask now',
 
   // optional: audio visualization configuration
   // audioVisualizerColor: '#002cf2',
