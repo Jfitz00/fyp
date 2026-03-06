@@ -1,16 +1,16 @@
-import { Button } from '@/components/ui/button';
 import Image from 'next/image';
+import { Button } from '@/components/ui/button';
 
 function WelcomeImage() {
   return (
-    <Image 
-    src="/image001.png"
-    alt="Fitzgerald Flowers Logo"
-    width={300}
-    height={300}
-    className="mb-4"
-    priority
-  />
+    <Image
+      src="/image001.png"
+      alt="Fitzgerald Flowers Logo"
+      width={300}
+      height={300}
+      className="mb-4"
+      priority
+    />
   );
 }
 
@@ -42,8 +42,7 @@ export const WelcomeView = ({
         </Button>
       </section>
 
-      <div className="fixed bottom-5 left-0 flex w-full items-center justify-center">
-      </div>
+      <div className="fixed bottom-5 left-0 flex w-full items-center justify-center"></div>
     </div>
   );
 };
