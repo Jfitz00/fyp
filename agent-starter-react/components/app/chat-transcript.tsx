@@ -44,13 +44,13 @@ export function ChatTranscript({
   const { state: agentState } = useAgent();
 
   return (
-    <div className="absolute top-0 bottom-[135px] flex w-full flex-col md:bottom-[170px]">
+    <div className="absolute top-0 bottom-[135px] flex min-h-0 w-full flex-col md:bottom-[170px]">
       <AnimatePresence>
         {!hidden && (
           <MotionContainer
             {...props}
             {...CONTAINER_MOTION_PROPS}
-            className={cn('flex h-full w-full flex-col gap-4', className)}
+            className={cn('flex h-full min-h-0 w-full flex-col gap-4', className)}
           >
             <AgentChatTranscript
               agentState={agentState}

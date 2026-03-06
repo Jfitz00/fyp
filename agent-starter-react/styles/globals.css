@@ -122,3 +122,15 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Hide chat transcript scrollbars while preserving scroll behavior. */
+.chat-scrollbar-hidden,
+.chat-scrollbar-hidden * {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.chat-scrollbar-hidden::-webkit-scrollbar,
+.chat-scrollbar-hidden *::-webkit-scrollbar {
+  display: none;
+}

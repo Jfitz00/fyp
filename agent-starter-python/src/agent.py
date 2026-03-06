@@ -105,7 +105,7 @@ If you cannot answer the question using the provided information or if no inform
 
         url = "https://favfzwgqlyupldmppocr.supabase.co/functions/v1/cached-hybrid-search"
         headers = {
-            "Authorization": self._headers_templater.render("Bearer {{secrets.SUPABASE_ANON_KEY}}"),
+            "Authorization": self._headers_templater.render("Bearer {{secrets.SUPABASE_SERVICE_ROLE_KEY}}"),
             "Conversation-Id": self._conversation_id,
         }
         payload = {
@@ -135,8 +135,8 @@ server.setup_fnc = prewarm
 @server.rtc_session()
 async def entrypoint(ctx: JobContext):
     runtime_conversation_id = (
-        getattr(ctx.job, "id", None)
-        or getattr(ctx.room, "name", None)
+        getattr(ctx.room, "name", None)
+        or getattr(ctx.job, "id", None)
     )
 
     session = AgentSession(

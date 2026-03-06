@@ -91,6 +91,7 @@ export const SessionView = ({
 }: React.ComponentProps<'section'> & SessionViewProps) => {
   const session = useSessionContext();
   const { messages } = useSessionMessages(session);
+  const conversationId = session.room?.name ?? null;
   const [chatOpen, setChatOpen] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
@@ -110,6 +111,18 @@ export const SessionView = ({
       scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
     }
   }, [messages]);
+
+  useEffect(() => {
+    if (!conversationId || window.parent === window) return;
+
+    window.parent.postMessage(
+      {
+        type: 'CONVERSATION_ID',
+        conversationId,
+      },
+      '*'
+    );
+  }, [conversationId]);
 
   return (
     <section className="bg-background relative z-10 h-svh w-svw overflow-hidden" {...props}>
@@ -150,7 +163,23 @@ export const SessionView = ({
             controls={controls}
             isChatOpen={chatOpen}
             isConnected={session.isConnected}
-            onDisconnect={session.end}
+            onDisconnect={async () => {
+              if (window.parent !== window) {
+                window.parent.postMessage(
+                  {
+                    type: 'CHAT_ENDED',
+                    conversationId,
+                  },
+                  '*'
+                );
+              }
+
+              try {
+                await session.end();
+              } finally {
+                window.location.reload();
+              }
+            }}
             onIsChatOpenChange={setChatOpen}
           />
         </div>
