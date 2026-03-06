@@ -4,7 +4,7 @@ import { type ComponentProps, useEffect, useRef, useState } from 'react';
 import { Track } from 'livekit-client';
 import { Loader, MessageSquareTextIcon, SendHorizontal } from 'lucide-react';
 import { type MotionProps, motion } from 'motion/react';
-import { useChat } from '@livekit/components-react';
+import { useChat, useSessionContext } from '@livekit/components-react';
 import { AgentDisconnectButton } from '@/components/agents-ui/agent-disconnect-button';
 import { AgentTrackControl } from '@/components/agents-ui/agent-track-control';
 import {
@@ -251,6 +251,7 @@ export function AgentControlBar({
   className,
   ...props
 }: AgentControlBarProps & ComponentProps<'div'>) {
+  const session = useSessionContext();
   const { send } = useChat();
   const publishPermissions = usePublishPermissions();
   const [isChatOpenUncontrolled, setIsChatOpenUncontrolled] = useState(isChatOpen);
@@ -265,7 +266,29 @@ export function AgentControlBar({
     handleCameraDeviceSelectError,
   } = useInputControls({ onDeviceError, saveUserChoices });
 
+  const interruptSessionIfPossible = async () => {
+    const interruptableSession = session as
+      | {
+          interrupt?: () => Promise<unknown> | unknown;
+          cancelResponse?: () => Promise<unknown> | unknown;
+        }
+      | undefined;
+
+    if (!interruptableSession) return;
+
+    if (typeof interruptableSession.interrupt === 'function') {
+      await interruptableSession.interrupt();
+      return;
+    }
+
+    if (typeof interruptableSession.cancelResponse === 'function') {
+      await interruptableSession.cancelResponse();
+    }
+  };
+
   const handleSendMessage = async (message: string) => {
+    // Barge-in: try to stop an in-flight response before sending new text.
+    await interruptSessionIfPossible();
     await send(message);
   };
 

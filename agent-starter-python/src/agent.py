@@ -101,8 +101,6 @@ If you cannot answer the question using the provided information or if no inform
             query: Parameter decided by you in order to return the most relevant product rows related to the customer's prompt.
         """
 
-        context.disallow_interruptions()
-
         url = "https://favfzwgqlyupldmppocr.supabase.co/functions/v1/cached-hybrid-search"
         headers = {
             "Authorization": self._headers_templater.render("Bearer {{secrets.SUPABASE_SERVICE_ROLE_KEY}}"),
