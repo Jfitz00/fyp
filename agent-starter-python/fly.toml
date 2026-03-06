@@ -10,7 +10,7 @@ kill_timeout = "300s"
   PYTHONUNBUFFERED = '1'
 
 [[vm]]
-  memory = '4gb'
+  memory = '2gb'
   cpu_kind = 'shared'
   cpus = 2
 
