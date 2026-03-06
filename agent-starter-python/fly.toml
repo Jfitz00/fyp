@@ -1,4 +1,4 @@
-app = 'fyp-yhf8bg'
+app = 'fyp-agent-starter-python'
 primary_region = 'iad'
 kill_timeout = "300s"
 
