@@ -1,0 +1,13 @@
+{
+  "overall_accuracy": 0.77,
+  "by_kind_accuracy": {
+    "barcode_lookup": 1.0,
+    "category_count": 0.0,
+    "category_under_price": 1.0,
+    "cheapest_in_category": 0.375,
+    "location_lookup": 1.0,
+    "most_expensive_in_category": 0.25,
+    "price_lookup": 1.0
+  },
+  "n": 100
+}
