@@ -108,7 +108,7 @@ function AgentChatInput({ chatOpen, onSend = async () => {}, className }: AgentC
   }, [chatOpen]);
 
   return (
-    <div className={cn('mb-3 flex grow items-end gap-2 rounded-md pl-1 text-sm', className)}>
+    <div className={cn('mb-3 flex grow items-end gap-2 rounded-md pl-1 text-base', className)}>
       <textarea
         autoFocus
         ref={inputRef}
