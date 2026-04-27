@@ -121,7 +121,25 @@ If you cannot answer the question using the provided information or if no inform
             raise
         except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             raise ToolError(f"error: {e!s}") from e
-
+        """
+            try:
+                session = utils.http_context.http_session()
+                async with session.post(
+                    url, timeout=timeout, headers=headers, json=payload
+                ) as resp:
+                    if resp.status >= 400:
+                        raise ToolError(f"error: HTTP {resp.status}")
+                    return await resp.text()
+            except RuntimeError:
+                # `utils.http_context.http_session()` is only available when running inside
+                # the LiveKit worker "job context". For local eval runs (standalone
+                # AgentSession), fall back to a temporary aiohttp session.
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.post(url, headers=headers, json=payload) as resp:
+                        if resp.status >= 400:
+                            raise ToolError(f"error: HTTP {resp.status}")
+                        return await resp.text()
+        """
 
 server = AgentServer()
 
