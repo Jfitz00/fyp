@@ -4,11 +4,10 @@ import os
 from pathlib import Path
 from typing import Any
 
-from livekit.agents import AgentSession, RunContext, function_tool, inference
+from livekit.agents import AgentSession, inference
 from livekit.agents._exceptions import APIConnectionError, APIStatusError
 
 from agent import DefaultAgent
-from local_product_search import format_webhook_response, hybrid_like_search
 from product_eval import build_eval_cases, load_products, save_cases_json
 from product_scoring import dump_json, score_answer, score_summary
 
@@ -33,25 +32,6 @@ def _extract_assistant_text(events: list[Any]) -> str:
         if isinstance(content, str):
             return content.strip()
     return ""
-
-
-class LocalEvalAgent(DefaultAgent):
-    def __init__(self, metadata: str, rows: list[dict[str, str]]) -> None:
-        super().__init__(metadata=metadata, fallback_conversation_id="eval")
-        self._rows = rows
-        self.active_case_id: str | None = None
-        self.tool_calls_by_case: dict[str, list[dict[str, Any]]] = {}
-
-    @function_tool(name="fitzgerald_flowers_product_hybrid_search")
-    async def _http_tool_fitzgerald_flowers_product_hybrid_search(  # type: ignore[override]
-        self, context: RunContext, query: str
-    ) -> str | None:
-        hits = hybrid_like_search(self._rows, query=query, k=5)
-        if self.active_case_id:
-            self.tool_calls_by_case.setdefault(self.active_case_id, []).append(
-                {"query": query, "hits": hits}
-            )
-        return format_webhook_response(hits)
 
 
 def _parse_price(value: Any) -> float | None:
@@ -135,7 +115,7 @@ async def _run(args: argparse.Namespace) -> int:
     llm_model = args.llm_model or os.environ.get("EVAL_LLM_MODEL") or "openai/gpt-4o-mini"
 
     results: list[dict[str, Any]] = []
-    agent = LocalEvalAgent(metadata="{}", rows=rows)
+    agent = DefaultAgent(metadata="{}", fallback_conversation_id="eval")
     async with (
         inference.LLM(model=llm_model) as llm,
         AgentSession(llm=llm) as session,
@@ -148,16 +128,13 @@ async def _run(args: argparse.Namespace) -> int:
             while True:
                 attempt += 1
                 try:
-                    agent.active_case_id = case.id
                     rr = await session.run(user_input=case.question)
                     answer_text = _extract_assistant_text(rr.events)
-                    tool_calls = agent.tool_calls_by_case.get(case.id, [])
-                    last_hits: list[dict[str, Any]] = []
-                    if tool_calls:
-                        last_hits = tool_calls[-1].get("hits") or []
-                    derived_expected = _derive_expected_from_tool(
-                        case.kind, case.expected, last_hits
-                    )
+                    # The DefaultAgent uses a real remote tool (Supabase edge function).
+                    # In this eval runner we don't currently capture tool calls/hits, so
+                    # we score against the original expected values.
+                    tool_calls: list[dict[str, Any]] = []
+                    derived_expected = case.expected
                     score = score_answer(case.kind, derived_expected, answer_text)
                     results.append(
                         {
@@ -182,7 +159,7 @@ async def _run(args: argparse.Namespace) -> int:
                                 "question": case.question,
                                 "expected": case.expected,
                                 "answer": "",
-                                "tool": {"calls": agent.tool_calls_by_case.get(case.id, [])},
+                                "tool": {"calls": []},
                                 "score": {
                                     "ok": False,
                                     "details": {
